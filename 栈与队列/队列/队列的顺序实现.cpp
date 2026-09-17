@@ -1,63 +1,106 @@
-// 顺序队列的实现
-
+// 循环队列的顺序实现：用取模运算把数组“首尾相接”，避免假溢出
+// 约定：牺牲一个存储单元来区分队空与队满
+//   队空：front == rear；队满：(rear + 1) % Maxsize == front
 #include <stdio.h>
 #define Maxsize 100
 
 typedef struct {
-    int data[Maxsize];  // 存储空间
-    int front;  // 队头指针
-    int rear;  // 队尾指针
+    int data[Maxsize];  // 存放队列元素
+    int front;          // 队头指针，指向队头元素
+    int rear;           // 队尾指针，指向队尾元素的下一个位置
 } SqQueue;
 
+// 初始化：两个指针都指向 0
 void InitQueue(SqQueue &Q) {
-    Q.rear = Q.front = 0;  
+    Q.rear = Q.front = 0;
 }
 
+// 销毁队列：顺序存储由系统回收，逻辑置空即可
 void DestroyQueue(SqQueue &Q) {
-    Q.front = 0;  // 销毁队列，重置队头指针
-    Q.rear = 0;  // 销毁队列，重置队尾指针
+    Q.front = 0;
+    Q.rear = 0;
 }
 
+// 判空
 bool EmptyQueue(SqQueue Q) {
-    return Q.front == Q.rear;  // 判断队列是否为空
+    return Q.front == Q.rear;
 }
 
+// 判满：队尾指针再进一格就会撞上队头
+// 说明：若想利用全部存储空间，可额外用 size 计数或 tag 标志来区分队空/队满（此时要改写判满与求长）
 bool FullQueue(SqQueue Q) {
-    return (Q.rear + 1) % Maxsize == Q.front;  // 判断队列是否已满，事实上牺牲一个存储空间来区分队列满和队列空的情况，如果要利用所有存储空间，可以使用一个计数器size来记录队列中的元素个数(此时要重写DestroyQueue)，或者使用一个标志位tag来区分队列满和队列空的情况。
+    return (Q.rear + 1) % Maxsize == Q.front;
 }
 
+// 入队：元素放到队尾，队尾指针后移一格（取模实现循环）
 bool EnQueue(SqQueue &Q, int x) {
-    if (FullQueue(Q)) {  // 判断队列是否已满
-        return false;  // 队列满，无法入队
+    if (FullQueue(Q)) {
+        return false;  // 队满
     }
-    Q.data[Q.rear] = x;  // 将元素入队
-    Q.rear = (Q.rear + 1) % Maxsize;  // 更新队尾指针，循环使用数组空间
+    Q.data[Q.rear] = x;
+    Q.rear = (Q.rear + 1) % Maxsize;
     return true;
 }
 
+// 出队：取出队头元素，队头指针后移一格（取模实现循环）
 bool DeQueue(SqQueue &Q, int &x) {
-    if (EmptyQueue(Q)) {  // 判断队列是否为空
-        return false;  // 队列空，无法出队
+    if (EmptyQueue(Q)) {
+        return false;  // 队空
     }
-    x = Q.data[Q.front];  // 将队头元素出队
-    Q.front = (Q.front + 1) % Maxsize;  // 更新队头指针，循环使用数组空间
+    x = Q.data[Q.front];
+    Q.front = (Q.front + 1) % Maxsize;
     return true;
 }
 
+// 读取队头元素（不出队）
 bool GetHead(SqQueue Q, int &x) {
-    if (EmptyQueue(Q)) {  // 判断队列是否为空
-        return false;  // 队列空，无法获取队头元素
+    if (EmptyQueue(Q)) {
+        return false;
     }
-    x = Q.data[Q.front];  // 获取队头元素
+    x = Q.data[Q.front];
     return true;
 }
 
+// 求队列长度：rear 可能“绕”到 front 前面，所以要加 Maxsize 后再取模
 int QueueLength(SqQueue Q) {
-    return (Q.rear - Q.front + Maxsize) % Maxsize;  // 计算队列长度
+    return (Q.rear - Q.front + Maxsize) % Maxsize;
+}
+
+// 打印队列（从队头到队尾）
+void PrintQueue(SqQueue Q) {
+    printf("队列(长度=%d)：队头 -> ", QueueLength(Q));
+    for (int i = Q.front; i != Q.rear; i = (i + 1) % Maxsize) {
+        printf("%d ", Q.data[i]);
+    }
+    printf("<- 队尾\n");
 }
 
 int main() {
     SqQueue Q;
+    int x;
     InitQueue(Q);
+    printf("初始化后是否为空：%s\n", EmptyQueue(Q) ? "是" : "否");
+
+    for (int i = 1; i <= 5; i++) {  // 依次入队 10 20 30 40 50
+        EnQueue(Q, i * 10);
+    }
+    PrintQueue(Q);
+
+    if (GetHead(Q, x)) {
+        printf("队头元素：%d\n", x);
+    }
+    if (DeQueue(Q, x)) {
+        printf("出队元素：%d\n", x);
+    }
+    EnQueue(Q, 60);  // 出队后再入队，验证循环利用数组空间
+    PrintQueue(Q);
+
+    while (!EmptyQueue(Q)) {  // 全部出队
+        DeQueue(Q, x);
+    }
+    printf("全部出队后是否为空：%s，空队列出队返回：%s\n",
+           EmptyQueue(Q) ? "是" : "否", DeQueue(Q, x) ? "成功" : "失败");
+
+    DestroyQueue(Q);
     return 0;
 }

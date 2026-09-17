@@ -1,272 +1,288 @@
-// 求解最短路径问题的三个算法（结构化版本）
+// 求解最短路径的三个算法
+//   1. BFS      ：无权图（或边权相同的图）的单源最短路径，时间复杂度 O(n+e)
+//   2. Dijkstra ：带权非负图的单源最短路径，时间复杂度 O(n²)
+//   3. Floyd    ：任意两点之间的最短路径（动态规划），时间复杂度 O(n³)，
+//                 允许负权边但不能有负权回路
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <limits.h>
+#define MAXV 100  // 顶点数上限（用于数组模拟队列与栈）
 
-// ====================== 结构体定义 ======================
-// 1. 邻接表节点（用于BFS/Dijkstra，适合稀疏图）
-typedef struct AdjNode {
-    int vertex;       // 邻接顶点编号
-    int weight;       // 边的权重（无权图时为1，有权图时为实际权重）
-    struct AdjNode* next; // 下一个邻接节点
+// ==================== 邻接表存储（供 BFS 和 Dijkstra 使用） ====================
+typedef struct AdjNode {    // 边结点
+    int vertex;             // 邻接顶点编号
+    int weight;             // 边权（无权图可统一取 1）
+    struct AdjNode *next;   // 下一条边
 } AdjNode;
 
-// 2. 邻接表头（每个顶点对应一个邻接表）
-typedef struct AdjList {
-    AdjNode* head;    // 邻接表头节点
+typedef struct {
+    AdjNode *head;          // 每个顶点对应一条邻接链表
 } AdjList;
 
-// 3. 图结构体（邻接表实现）
-typedef struct Graph {
-    int numVertices;  // 顶点总数
-    AdjList* array;   // 邻接表数组
+typedef struct {
+    int numVertices;        // 顶点总数
+    AdjList *array;         // 邻接表数组
 } Graph;
 
-// 4. 用于Dijkstra/Floyd的辅助结构体（存储最短路径信息）
-typedef struct PathInfo {
-    int dist;         // 起点到该顶点的最短距离
-    int prev;         // 最短路径上的前驱顶点（用于回溯路径）
-    int visited;      // Dijkstra中标记是否已处理
-} PathInfo;
-
-// ====================== 辅助函数 ======================
-// 1. 创建邻接表节点
-AdjNode* createAdjNode(int v, int weight) {
-    AdjNode* newNode = (AdjNode*)malloc(sizeof(AdjNode));
-    newNode->vertex = v;
-    newNode->weight = weight;
-    newNode->next = NULL;
-    return newNode;
-}
-
-// 2. 创建图（初始化邻接表）
-Graph* createGraph(int vertices) {
-    Graph* graph = (Graph*)malloc(sizeof(Graph));
+// 创建图：分配邻接表并置空
+Graph *CreateGraph(int vertices) {
+    Graph *graph = (Graph *)malloc(sizeof(Graph));
+    if (graph == NULL) {
+        return NULL;
+    }
     graph->numVertices = vertices;
-    graph->array = (AdjList*)malloc(vertices * sizeof(AdjList));
-
-    // 初始化每个顶点的邻接表为空
+    graph->array = (AdjList *)malloc(vertices * sizeof(AdjList));
+    if (graph->array == NULL) {
+        free(graph);
+        return NULL;
+    }
     for (int i = 0; i < vertices; i++) {
         graph->array[i].head = NULL;
     }
     return graph;
 }
 
-// 3. 向图中添加边（无向图/有向图可通过此函数控制）
-void addEdge(Graph* graph, int src, int dest, int weight, int isDirected) {
-    // 添加 src -> dest 的边
-    AdjNode* newNode = createAdjNode(dest, weight);
-    newNode->next = graph->array[src].head;
-    graph->array[src].head = newNode;
-
-    // 无向图需添加 dest -> src 的边
-    if (!isDirected) {
-        newNode = createAdjNode(src, weight);
-        newNode->next = graph->array[dest].head;
-        graph->array[dest].head = newNode;
+// 创建边结点
+static AdjNode *CreateAdjNode(int v, int weight) {
+    AdjNode *node = (AdjNode *)malloc(sizeof(AdjNode));
+    if (node == NULL) {
+        return NULL;
     }
+    node->vertex = v;
+    node->weight = weight;
+    node->next = NULL;
+    return node;
 }
 
-// 4. 初始化路径信息结构体（Dijkstra专用）
-void initPathInfo(PathInfo* info, int n, int start) {
-    for (int i = 0; i < n; i++) {
-        info[i].dist = INT_MAX;  // 初始距离为无穷大
-        info[i].prev = -1;       // 无前驱
-        info[i].visited = 0;     // 未访问
+// 添加边：isDirected 为 1 表示有向边，为 0 表示无向边（对称添加）
+bool AddEdge(Graph *graph, int src, int dest, int weight, int isDirected) {
+    AdjNode *node = CreateAdjNode(dest, weight);  // src -> dest
+    if (node == NULL) {
+        return false;
     }
-    info[start].dist = 0;  // 起点到自身距离为0
+    node->next = graph->array[src].head;  // 头插
+    graph->array[src].head = node;
+
+    if (!isDirected) {  // 无向图还要添加 dest -> src
+        AdjNode *back = CreateAdjNode(src, weight);
+        if (back == NULL) {
+            return false;
+        }
+        back->next = graph->array[dest].head;
+        graph->array[dest].head = back;
+    }
+    return true;
 }
 
-// 5. 打印最短路径（通过前驱节点回溯）
-void printPath(PathInfo* info, int v) {
-    if (info[v].prev == -1) {
-        printf("%d", v);  // 递归到起点
+// 释放图占用的内存
+void FreeGraph(Graph *graph) {
+    if (graph == NULL) {
         return;
     }
-    printPath(info, info[v].prev);
-    printf(" -> %d", v);
-}
-
-// 6. 释放图的内存（避免内存泄漏）
-void freeGraph(Graph* graph) {
-    if (!graph) return;
     for (int i = 0; i < graph->numVertices; i++) {
-        AdjNode* curr = graph->array[i].head;
-        while (curr) {
-            AdjNode* temp = curr;
-            curr = curr->next;
-            free(temp);
+        AdjNode *p = graph->array[i].head;
+        while (p != NULL) {
+            AdjNode *next = p->next;
+            free(p);
+            p = next;
         }
     }
     free(graph->array);
     free(graph);
 }
 
-// ====================== 核心算法 ======================
-// 1. BFS算法（求解无权图最短路径）
-void BFS(Graph* graph, int start) {
-    int n = graph->numVertices;
-    int* dist = (int*)malloc(n * sizeof(int));  // 存储最短距离
-    int* prev = (int*)malloc(n * sizeof(int));  // 存储前驱节点
-    int* visited = (int*)malloc(n * sizeof(int)); // 访问标记
+// ==================== 路径打印 ====================
+// 根据前驱数组 prev 打印 start 到 v 的路径
+// prev[cur] 表示 cur 在最短路径上的前驱，起点的前驱为 -1
+void PrintPathByPrev(const int prev[], int start, int v) {
+    int path[MAXV];
+    int len = 0;
+    for (int cur = v; cur != -1 && len < MAXV; cur = prev[cur]) {
+        path[len++] = cur;  // 从终点沿前驱一路退到起点（得到的是逆序路径）
+    }
+    if (len == 0 || path[len - 1] != start) {  // 没退到起点说明两点不连通
+        printf("(不可达)");
+        return;
+    }
+    for (int i = len - 1; i >= 0; i--) {  // 倒序输出即为正序路径
+        printf("%d", path[i]);
+        if (i > 0) {
+            printf(" -> ");
+        }
+    }
+}
 
-    // 初始化
+// ==================== 1. BFS：无权图的单源最短路径 ====================
+void BFS(Graph *graph, int start) {
+    int n = graph->numVertices;
+    int *dist = (int *)malloc(n * sizeof(int));     // 起点到各点的最少边数
+    int *prev = (int *)malloc(n * sizeof(int));     // 最短路径上的前驱
+    int *visited = (int *)malloc(n * sizeof(int));  // 访问标记
+    int *queue = (int *)malloc(n * sizeof(int));    // 数组模拟队列
+    if (dist == NULL || prev == NULL || visited == NULL || queue == NULL) {
+        printf("内存分配失败！\n");
+        return;
+    }
     for (int i = 0; i < n; i++) {
-        dist[i] = -1;    // -1表示不可达
+        dist[i] = -1;  // -1 表示不可达
         prev[i] = -1;
         visited[i] = 0;
     }
     dist[start] = 0;
     visited[start] = 1;
-
-    // 队列实现BFS
-    int* queue = (int*)malloc(n * sizeof(int));
     int front = 0, rear = 0;
     queue[rear++] = start;
 
     while (front < rear) {
-        int u = queue[front++];
-        AdjNode* curr = graph->array[u].head;
-        while (curr) {
-            int v = curr->vertex;
-            if (!visited[v]) {
+        int u = queue[front++];  // 取出队头
+        for (AdjNode *p = graph->array[u].head; p != NULL; p = p->next) {
+            int v = p->vertex;
+            if (!visited[v]) {          // BFS 中第一次访问到 v 一定是最短路径
                 visited[v] = 1;
-                dist[v] = dist[u] + 1;
+                dist[v] = dist[u] + 1;  // 无权图的“长度”就是边数
                 prev[v] = u;
                 queue[rear++] = v;
             }
-            curr = curr->next;
         }
     }
 
-    // 打印结果
-    printf("=== BFS 最短路径（无权图）===\n");
+    printf("=== BFS：无权图从顶点 %d 出发的最短路径（以边数计）===\n", start);
     for (int i = 0; i < n; i++) {
-        printf("起点 %d 到 %d: ", start, i);
+        printf("  %d -> %d：", start, i);
         if (dist[i] == -1) {
             printf("不可达\n");
         } else {
-            printf("距离=%d, 路径: ", dist[i]);
-            // 复用printPath（需构造临时PathInfo）
-            PathInfo tempInfo;
-            memcpy(&tempInfo, &(PathInfo){.prev = prev[i]}, sizeof(PathInfo));
-            printPath(&(PathInfo){.prev = prev[i]}, i); // 简化打印
+            printf("最少边数 = %d，路径 ", dist[i]);
+            PrintPathByPrev(prev, start, i);
             printf("\n");
         }
     }
-
-    // 释放内存
     free(dist);
     free(prev);
     free(visited);
     free(queue);
 }
 
-// 2. Dijkstra算法（求解带权非负图最短路径）
-void Dijkstra(Graph* graph, int start) {
+// ==================== 2. Dijkstra：带权非负图的单源最短路径 ====================
+// 思路：把顶点分成“已确定最短路径”和“未确定”两类，
+//       每轮从未确定集合中取 dist 最小的顶点 u 并确定下来，再用 u 去松弛它的邻接点
+void Dijkstra(Graph *graph, int start) {
     int n = graph->numVertices;
-    PathInfo* info = (PathInfo*)malloc(n * sizeof(PathInfo));
-    initPathInfo(info, n, start);
+    int *dist = (int *)malloc(n * sizeof(int));     // 起点到各点的最短距离
+    int *prev = (int *)malloc(n * sizeof(int));     // 最短路径上的前驱
+    int *visited = (int *)malloc(n * sizeof(int));  // 最短距离是否已确定
+    if (dist == NULL || prev == NULL || visited == NULL) {
+        printf("内存分配失败！\n");
+        return;
+    }
+    for (int i = 0; i < n; i++) {
+        dist[i] = INT_MAX;  // INT_MAX 表示暂时不可达
+        prev[i] = -1;
+        visited[i] = 0;
+    }
+    dist[start] = 0;
 
-    // 遍历所有顶点
-    for (int i = 0; i < n - 1; i++) {
-        // 找到未访问的距离最小的顶点u
+    for (int i = 0; i < n; i++) {
+        // (1) 在未确定的顶点中挑出 dist 最小者
         int u = -1, minDist = INT_MAX;
         for (int j = 0; j < n; j++) {
-            if (!info[j].visited && info[j].dist < minDist) {
-                minDist = info[j].dist;
+            if (!visited[j] && dist[j] < minDist) {
+                minDist = dist[j];
                 u = j;
             }
         }
-        if (u == -1) break; // 剩余顶点不可达
-        info[u].visited = 1;
-
-        // 松弛操作：更新u的邻接顶点距离
-        AdjNode* curr = graph->array[u].head;
-        while (curr) {
-            int v = curr->vertex;
-            int weight = curr->weight;
-            if (!info[v].visited && info[u].dist != INT_MAX 
-                && info[u].dist + weight < info[v].dist) {
-                info[v].dist = info[u].dist + weight;
-                info[v].prev = u;
+        if (u == -1) {  // 剩下的顶点都不可达
+            break;
+        }
+        visited[u] = 1;  // u 的最短距离已经确定
+        // (2) 以 u 作为中转，松弛它的所有邻接点
+        for (AdjNode *p = graph->array[u].head; p != NULL; p = p->next) {
+            int v = p->vertex;
+            if (!visited[v] && dist[u] != INT_MAX && dist[u] + p->weight < dist[v]) {
+                dist[v] = dist[u] + p->weight;
+                prev[v] = u;
             }
-            curr = curr->next;
         }
     }
 
-    // 打印结果
-    printf("\n=== Dijkstra 最短路径（带权非负图）===\n");
+    printf("\n=== Dijkstra：带权非负图从顶点 %d 出发的最短路径 ===\n", start);
     for (int i = 0; i < n; i++) {
-        printf("起点 %d 到 %d: ", start, i);
-        if (info[i].dist == INT_MAX) {
+        printf("  %d -> %d：", start, i);
+        if (dist[i] == INT_MAX) {
             printf("不可达\n");
         } else {
-            printf("距离=%d, 路径: ", info[i].dist);
-            printPath(info, i);
+            printf("距离 = %d，路径 ", dist[i]);
+            PrintPathByPrev(prev, start, i);
             printf("\n");
         }
     }
-
-    free(info);
+    free(dist);
+    free(prev);
+    free(visited);
 }
 
-// 3. Floyd算法（求解任意两点最短路径，支持负权边但无负环）
-void Floyd(int** graph, int n) {
-    // 初始化距离矩阵和前驱矩阵
-    int** dist = (int**)malloc(n * sizeof(int*));
-    int** prev = (int**)malloc(n * sizeof(int*));
+// ==================== 3. Floyd：任意两点之间的最短路径 ====================
+// 打印 Floyd 结果中 i 到 j 的路径：沿 prev[i][*] 从 j 一路退回 i
+void PrintFloydPath(int **prev, int i, int j) {
+    int path[MAXV];
+    int len = 0;
+    for (int cur = j; cur != -1 && cur != i && len < MAXV; cur = prev[i][cur]) {
+        path[len++] = cur;  // 逆序记录中间顶点
+    }
+    printf("%d", i);  // 先输出起点
+    for (int k = len - 1; k >= 0; k--) {
+        printf(" -> %d", path[k]);
+    }
+}
+
+// graph 为邻接矩阵：graph[i][j] 是边权，INT_MAX 表示没有边，约定 graph[i][i] = 0
+void Floyd(int **graph, int n) {
+    int **dist = (int **)malloc(n * sizeof(int *));  // 最短距离矩阵
+    int **prev = (int **)malloc(n * sizeof(int *));  // 前驱矩阵：prev[i][j] 表示 i->j 路径上 j 的前驱
+    if (dist == NULL || prev == NULL) {
+        printf("内存分配失败！\n");
+        return;
+    }
     for (int i = 0; i < n; i++) {
-        dist[i] = (int*)malloc(n * sizeof(int));
-        prev[i] = (int*)malloc(n * sizeof(int));
+        dist[i] = (int *)malloc(n * sizeof(int));
+        prev[i] = (int *)malloc(n * sizeof(int));
         for (int j = 0; j < n; j++) {
             dist[i][j] = graph[i][j];
-            if (graph[i][j] != INT_MAX && i != j) {
-                prev[i][j] = i;
-            } else {
-                prev[i][j] = -1;
-            }
+            // 初始时只允许直达：i->j 有边则 j 的前驱就是 i
+            prev[i][j] = (i != j && graph[i][j] != INT_MAX) ? i : -1;
         }
     }
 
-    // 动态规划更新最短路径
-    for (int k = 0; k < n; k++) {  // 中间顶点
-        for (int i = 0; i < n; i++) {  // 起点
-            for (int j = 0; j < n; j++) {  // 终点
-                if (dist[i][k] != INT_MAX && dist[k][j] != INT_MAX 
-                    && dist[i][k] + dist[k][j] < dist[i][j]) {
+    // 三重循环：外层 k 表示“允许经过顶点 k 作为中转”，这是动态规划的思想
+    for (int k = 0; k < n; k++) {
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) {
+                if (dist[i][k] == INT_MAX || dist[k][j] == INT_MAX) {
+                    continue;  // 不检查会溢出，INT_MAX + 权值 会变成负数
+                }
+                if (dist[i][k] + dist[k][j] < dist[i][j]) {
                     dist[i][j] = dist[i][k] + dist[k][j];
-                    prev[i][j] = prev[k][j];
+                    prev[i][j] = prev[k][j];  // 新路径中 j 的前驱，沿用 k->j 路径上 j 的前驱
                 }
             }
         }
     }
 
-    // 打印结果
-    printf("\n=== Floyd 任意两点最短路径 ===\n");
+    printf("\n=== Floyd：任意两点之间的最短路径 ===\n");
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
-            printf("起点 %d 到 %d: ", i, j);
+            printf("  %d -> %d：", i, j);
             if (dist[i][j] == INT_MAX) {
                 printf("不可达\n");
             } else {
-                printf("距离=%d, 路径: ", dist[i][j]);
-                // 构造临时PathInfo用于打印
-                PathInfo* tempInfo = (PathInfo*)malloc(n * sizeof(PathInfo));
-                for (int x = 0; x < n; x++) {
-                    tempInfo[x].prev = prev[i][x];
-                }
-                printPath(tempInfo, j);
-                free(tempInfo);
+                printf("距离 = %d，路径 ", dist[i][j]);
+                PrintFloydPath(prev, i, j);
                 printf("\n");
             }
         }
-        printf("-----------------\n");
     }
 
-    // 释放内存
-    for (int i = 0; i < n; i++) {
+    for (int i = 0; i < n; i++) {  // 释放二维数组
         free(dist[i]);
         free(prev[i]);
     }
@@ -274,45 +290,45 @@ void Floyd(int** graph, int n) {
     free(prev);
 }
 
-// ====================== 主函数测试 ======================
 int main() {
-    // 测试1：BFS和Dijkstra（邻接表）
-    int vertices = 5;
-    Graph* graph = createGraph(vertices);
-    // 添加有向边（src, dest, weight, isDirected=1）
-    addEdge(graph, 0, 1, 2, 1);
-    addEdge(graph, 0, 2, 1, 1);
-    addEdge(graph, 1, 3, 1, 1);
-    addEdge(graph, 2, 1, 3, 1);
-    addEdge(graph, 2, 3, 4, 1);
-    addEdge(graph, 3, 4, 2, 1);
+    // ---------- 测试 1：BFS 与 Dijkstra（用邻接表存有向带权图） ----------
+    int n1 = 5;
+    Graph *graph = CreateGraph(n1);
+    if (graph == NULL) {
+        printf("创建图失败！\n");
+        return 0;
+    }
+    AddEdge(graph, 0, 1, 2, 1);
+    AddEdge(graph, 0, 2, 1, 1);
+    AddEdge(graph, 1, 3, 1, 1);
+    AddEdge(graph, 2, 1, 3, 1);
+    AddEdge(graph, 2, 3, 4, 1);
+    AddEdge(graph, 3, 4, 2, 1);
+    printf("有向图的边：0->1(2) 0->2(1) 1->3(1) 2->1(3) 2->3(4) 3->4(2)\n");
+    BFS(graph, 0);       // BFS 忽略权值，按边数计算
+    Dijkstra(graph, 0);  // Dijkstra 考虑权值
 
-    BFS(graph, 0);          // BFS测试（无权图时weight无意义，按1处理）
-    Dijkstra(graph, 0);     // Dijkstra测试
-
-    // 测试2：Floyd（邻接矩阵）
-    int n = 4;
-    int** floydGraph = (int**)malloc(n * sizeof(int*));
-    for (int i = 0; i < n; i++) {
-        floydGraph[i] = (int*)malloc(n * sizeof(int));
-        for (int j = 0; j < n; j++) {
-            floydGraph[i][j] = (i == j) ? 0 : INT_MAX;
+    // ---------- 测试 2：Floyd（用邻接矩阵存有向带权图） ----------
+    int n2 = 4;
+    int **matrix = (int **)malloc(n2 * sizeof(int *));
+    for (int i = 0; i < n2; i++) {
+        matrix[i] = (int *)malloc(n2 * sizeof(int));
+        for (int j = 0; j < n2; j++) {
+            matrix[i][j] = (i == j) ? 0 : INT_MAX;  // 自己到自己为 0，其余先设为不可达
         }
     }
-    floydGraph[0][1] = 2;
-    floydGraph[0][2] = 6;
-    floydGraph[1][2] = 3;
-    floydGraph[1][3] = 1;
-    floydGraph[2][3] = 2;
+    matrix[0][1] = 2;
+    matrix[0][2] = 6;
+    matrix[1][2] = 3;
+    matrix[1][3] = 1;
+    matrix[2][3] = 2;
+    printf("\n有向图的边：0->1(2) 0->2(6) 1->2(3) 1->3(1) 2->3(2)");
+    Floyd(matrix, n2);
 
-    Floyd(floydGraph, n);   // Floyd测试
-
-    // 释放内存
-    freeGraph(graph);
-    for (int i = 0; i < n; i++) {
-        free(floydGraph[i]);
+    FreeGraph(graph);
+    for (int i = 0; i < n2; i++) {
+        free(matrix[i]);
     }
-    free(floydGraph);
-
+    free(matrix);
     return 0;
 }

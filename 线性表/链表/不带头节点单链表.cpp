@@ -1,105 +1,193 @@
+// 不带头结点的单链表：头指针直接指向第一个数据结点
+// 因此对表头元素的插入/删除需要单独处理（一般都要修改头指针 L 本身）
 #include <stdio.h>
 #include <stdlib.h>
 
-typedef struct Node {  // 单链表的结点定义
-    int data;  // 数据域
-    struct Node *next;  // 指针域，指向下一个结点
-} Node, *LinkList;
+typedef struct LNode {   // 单链表的结点定义
+    int data;            // 数据域
+    struct LNode *next;  // 指针域，指向下一个结点
+} LNode, *LinkList;
 
-bool InitList (LinkList &L)  // 初始化不带头节点单链表
-{
-    L = NULL;  // 将链表指针初始化为NULL，表示链表为空
+// 初始化：用 NULL 表示空表
+bool InitList(LinkList &L) {
+    L = NULL;
     return true;
 }
 
-bool Empty (LinkList L)  // 判断单链表是否为空
-{
-    return L == NULL;  // 如果链表指针为NULL，说明链表为空
+// 判空
+bool Empty(LinkList L) {
+    return L == NULL;
 }
 
-bool ListInsert (LinkList &L, int i, int e)  // 在单链表的第i个位序插入元素e
-{
-    if (i < 1)  // 增强健壮性，检查插入位置是否合法
-        return false;
-    if (i == 1) {  // 插入到链表头部
-        Node* s = (Node*)malloc(sizeof(Node));  // 创建新节点
-        if (!s) {
-            printf("内存分配失败！\n");
-            return false;
-        }
-        s->data = e;  // 设置新节点的数据域
-        s->next = L;  // 新节点的next指向原链表头部
-        L = s;  // 更新链表头指针
-        return true;
+// 求表长，时间复杂度 O(n)
+int Length(LinkList L) {
+    int len = 0;
+    for (LNode *p = L; p != NULL; p = p->next) {
+        len++;
     }
-    Node* p = L;  // 从链表头部开始查找第i-1个节点
+    return len;
+}
+
+// 按位查找：返回第 i 个结点（位序从 1 开始），不存在返回 NULL
+LNode *GetElem(LinkList L, int i) {
+    if (i < 1) {  // 增强健壮性，检查位置是否合法
+        return NULL;
+    }
+    LNode *p = L;
     int j = 1;
-    while (p && j < i - 1) {
+    while (p != NULL && j < i) {
         p = p->next;
         j++;
     }
-    if (!p)  // 如果第i-1个节点不存在，插入失败
+    return p;
+}
+
+// 按值查找：返回第一个数据域等于 e 的结点，未找到返回 NULL
+LNode *LocateElem(LinkList L, int e) {
+    LNode *p = L;
+    while (p != NULL && p->data != e) {
+        p = p->next;
+    }
+    return p;
+}
+
+// 按值查找位序：返回第一个值为 e 的元素的位序，未找到返回 0
+int LocatePos(LinkList L, int e) {
+    int i = 1;
+    for (LNode *p = L; p != NULL; p = p->next, i++) {
+        if (p->data == e) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+// 后插：在结点 p 之后插入元素 e，时间复杂度 O(1)
+bool InsertNextNode(LNode *p, int e) {
+    if (p == NULL) {
         return false;
-    Node* s = (Node*)malloc(sizeof(Node));  // 创建新节点
-    if (!s) {
+    }
+    LNode *s = (LNode *)malloc(sizeof(LNode));  // 创建新结点
+    if (s == NULL) {
         printf("内存分配失败！\n");
         return false;
     }
-    s->data = e;  // 设置新节点的数据域
-    s->next = p->next;  // 新节点的next指向第i-1个节点的下一个节点
-    p->next = s;  // 第i-1个节点的next指向新节点
+    s->data = e;
+    s->next = p->next;  // 新结点的 next 指向 p 的后继
+    p->next = s;        // p 的 next 指向新结点
     return true;
 }
 
-bool ListDelete (LinkList &L, int i, int &e)  // 删除单链表的第i个位置的元素
-{
-    if (i < 1)  // 增强健壮性，检查删除位置是否合法
+// 按位插入：在第 i 个位序插入元素 e
+bool ListInsert(LinkList &L, int i, int e) {
+    if (i < 1) {  // 增强健壮性，检查插入位置是否合法
         return false;
-    if (i == 1) {  // 删除链表头部
-        if (!L) {  // 如果链表为空，删除失败
+    }
+    if (i == 1) {  // 插入到表头，必须修改头指针 L
+        LNode *s = (LNode *)malloc(sizeof(LNode));
+        if (s == NULL) {
+            printf("内存分配失败！\n");
+            return false;
+        }
+        s->data = e;
+        s->next = L;  // 新结点的 next 指向原首元结点
+        L = s;        // 头指针指向新结点
+        return true;
+    }
+    LNode *p = GetElem(L, i - 1);  // 找到第 i-1 个结点
+    return InsertNextNode(p, e);   // 在其后插入（p 为 NULL 时返回 false）
+}
+
+// 按位删除：删除第 i 个位序的结点，用 e 返回其值
+bool ListDelete(LinkList &L, int i, int &e) {
+    if (i < 1) {  // 增强健壮性，检查删除位置是否合法
+        return false;
+    }
+    if (i == 1) {  // 删除表头元素，必须修改头指针 L
+        if (L == NULL) {  // 空表无法删除
             printf("链表为空，无法删除！\n");
             return false;
         }
-        Node* p = L;  // 保存要删除的节点指针
-        e = p->data;  // 获取被删除节点的数据值
-        L = L->next;  // 更新链表头指针
-        free(p);  // 释放被删除节点的内存
+        LNode *p = L;  // 保存要删除的结点
+        e = p->data;
+        L = L->next;   // 头指针后移
+        free(p);       // 释放被删除结点的内存
         return true;
     }
-    Node* p = L;  // 从链表头部开始查找第i-1个节点
-    int j = 1;
-    while (p && j < i - 1) {
-        p = p->next;
-        j++;
-    }
-    if (!p || !p->next) {  // 如果第i-1个节点不存在或第i个节点不存在，删除失败
-        printf("位置不合法！\n");
+    LNode *p = GetElem(L, i - 1);        // 找到第 i-1 个结点
+    if (p == NULL || p->next == NULL) {  // 第 i 个结点不存在
+        printf("删除位置 %d 不合法！\n", i);
         return false;
     }
-    Node* q = p->next;  // 保存要删除的节点指针
-    e = q->data;  // 获取被删除节点的数据值
-    p->next = q->next;  // 第i-1个节点的next指向第i+1个节点
-    free(q);  // 释放被删除节点的内存
+    LNode *q = p->next;  // q 指向被删除结点
+    e = q->data;
+    p->next = q->next;   // 摘链
+    free(q);
     return true;
 }
 
-int main () 
-{
-    LinkList L;
-    InitList (L);
-    
-    // 插入元素
-    ListInsert (L, 1, 10);  // 在第1个位序插入10
-    ListInsert (L, 2, 20);  // 在第2个位序插入20
-    ListInsert (L, 3, 30);  // 在第3个位序插入30
-    
-    // 输出链表元素
-    Node* p = L;
-    while (p) {
-        printf("%d ", p->data);
-        p = p->next;
+// 用数组建表（尾插法），便于测试
+void CreateListByArray(LinkList &L, const int a[], int n) {
+    InitList(L);
+    LNode *r = NULL;  // r 指向尾结点
+    for (int i = 0; i < n; i++) {
+        if (r == NULL) {  // 第一个结点需要修改头指针
+            L = (LNode *)malloc(sizeof(LNode));
+            if (L == NULL) {
+                return;
+            }
+            L->data = a[i];
+            L->next = NULL;
+            r = L;
+        } else {
+            InsertNextNode(r, a[i]);
+            r = r->next;
+        }
     }
-    printf("\n");
-    
+}
+
+// 打印单链表
+void PrintList(LinkList L) {
+    printf("单链表(长度=%d)：", Length(L));
+    for (LNode *p = L; p != NULL; p = p->next) {
+        printf("%d -> ", p->data);
+    }
+    printf("NULL\n");
+}
+
+// 销毁单链表
+void DestroyList(LinkList &L) {
+    LNode *p = L;
+    while (p != NULL) {
+        LNode *q = p->next;  // 先记住后继，再释放当前结点
+        free(p);
+        p = q;
+    }
+    L = NULL;
+}
+
+int main() {
+    LinkList L;
+    int e;
+    int a[] = {10, 20, 30};
+
+    CreateListByArray(L, a, 3);  // 尾插法建表：10 20 30
+    PrintList(L);
+
+    ListInsert(L, 1, 5);   // 头插，得到 5 10 20 30
+    ListInsert(L, 5, 40);  // 尾插，得到 5 10 20 30 40
+    ListInsert(L, 3, 15);  // 中间插入，得到 5 10 15 20 30 40
+    PrintList(L);
+
+    printf("值 20 的位序：%d\n", LocatePos(L, 20));
+
+    if (ListDelete(L, 1, e)) {  // 删除表头元素
+        printf("被删除的元素：%d\n", e);
+    }
+    ListDelete(L, 99, e);  // 越界删除应被拦截
+    PrintList(L);
+
+    DestroyList(L);
+    printf("销毁后表是否为空：%s\n", Empty(L) ? "是" : "否");
     return 0;
 }

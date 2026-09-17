@@ -1,0 +1,18 @@
+# macOS 系统文件
+.DS_Store
+.AppleDouble
+.L_Squared
+
+# 编辑器本地配置
+.vscode/
+
+# C/C++ 编译产物
+*.o
+*.obj
+*.exe
+*.out
+a.out
+*.dSYM/
+
+# 误在此目录初始化的空仓库（不要提交）
+线性表/顺序表/huang666/
